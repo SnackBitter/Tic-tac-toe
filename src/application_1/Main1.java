@@ -1,7 +1,5 @@
 package application_1;
 
-import application_1.controller.Controller;
-import javafx.animation.AnimationTimer;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
@@ -9,6 +7,7 @@ import javafx.scene.layout.Pane;
 import javafx.stage.Stage;
 
 public class Main1 extends Application {
+
     @Override
     public void start(Stage primaryStage) {
         try {

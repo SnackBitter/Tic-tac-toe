@@ -4,14 +4,14 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.net.InetAddress;
 import java.net.Socket;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import javafx.animation.AnimationTimer;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
-import javafx.scene.control.TextArea;
+import javafx.scene.control.Button;
 import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
@@ -29,7 +29,25 @@ public class Controller implements Initializable {
     private static final int BOUND = 90;
     private static final int OFFSET = 15;
 
-    private Socket socket = new Socket("127.0.0.1",12345);
+    @FXML
+    private Button Room1;
+
+    @FXML
+    private Button Room2;
+
+    @FXML
+    private Button Circle;
+
+    @FXML
+    private Button Line;
+
+    @FXML
+    private Button closeButton;
+
+    @FXML
+    private Button startButton;
+
+    private Socket socket;
     @FXML
     private Text text;
 
@@ -41,43 +59,126 @@ public class Controller implements Initializable {
 
     private static boolean TURN = true;
 
+    private static boolean serverTurn = false;
+
     private static final int[][] chessBoard = new int[3][3];
+
+    private static int port = 1234;
 
     private static final boolean[][] flag = new boolean[3][3];
 
-    private static int stage = 0;
+
+    private AnimationTimer timer;
+
+    private int room = 0;
 
     public Controller() throws IOException {
     }
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
-        game_panel.setOnMouseClicked(event -> {
-            int x = (int) (event.getX() / BOUND);
-            int y = (int) (event.getY() / BOUND);
-            if((TURN ? PLAY_1 : PLAY_2)==PLAY_2){
-                text.setText("Now is not your turn!------Wait for another player");
-                stage = 0;
-                update();
-                return;
-            }
-            if (refreshBoard(x, y)) {
-                TURN = !TURN;
-                stage = 1;
-                update();
+        text.setText("Choose your turn");
+
+        //服务器断开异常抛出
+        Thread thread = new Thread(() -> {
+            try {
+                while (true) {
+                    Thread.sleep(1000);
+                    socket.sendUrgentData(0xFF);
+                    socket.setSoTimeout(15000);
+                }
+            }catch (SocketTimeoutException | SocketException e){
+                text.setText("Server is shutting down");
+            } catch (IOException | InterruptedException e) {
+                throw new RuntimeException(e);
             }
         });
-        new AnimationTimer(){
+        timer = new AnimationTimer() {
             @Override
             public void handle(long now) {
                 drawChess();
             }
-        }.start();
+        };
+        timer.start();
+        game_panel.setOnMouseClicked(event -> {
+            int x = (int) (event.getX() / BOUND);
+            int y = (int) (event.getY() / BOUND);
+            if(!(TURN==serverTurn)){
+                text.setText("Now is not your turn!------Wait for another player");
+            }else {
+                if (refreshBoard(x, y)) {
+                    try {
+                        sendToServer();
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                    serverTurn = !serverTurn;
+                }
+            }
+        });
+
+        Room1.setOnMouseClicked(event -> {
+            room = 1;
+            text.setText("You are in room 1");
+        });
+
+        Room2.setOnMouseClicked(event -> {
+            room = 2;
+            text.setText("You are in room 2");
+        });
+
+        startButton.setOnMouseClicked(event -> {
+            try {
+                socket = new Socket("127.0.0.1",port);
+                thread.start();
+                receiveFromServer();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            receiveFromServer();
+        });
+        
+        closeButton.setOnMouseClicked(event -> {
+            try {
+                socket.close();
+                text.setText("Connect closed");
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        Circle.setOnMouseClicked(event -> {
+            if(room==1) {
+                port = 1345;
+                TURN = true;
+            }else if(room == 2){
+                port = 2456;
+                TURN = true;
+            }else {
+                text.setText("Choose your room first");
+                return;
+            }
+            text.setText("You are now in Circle");
+        });
+
+        Line.setOnMouseClicked(event -> {
+            if(room==1) {
+                port = 6890;
+                TURN = false;
+            }else if(room == 2){
+                port = 5789;
+                TURN = false;
+            }else {
+                text.setText("Choose your room first");
+                return;
+            }
+            text.setText("You are now in Line");
+        });
     }
 
     private boolean refreshBoard (int x, int y) {
         if (chessBoard[x][y] == EMPTY) {
-            chessBoard[x][y] = TURN ? PLAY_1 : PLAY_2;
+            chessBoard[x][y] = serverTurn ? PLAY_1 : PLAY_2;
             return true;
         }
         return false;
@@ -136,7 +237,7 @@ public class Controller implements Initializable {
         line_b.setStroke(Color.BLUE);
         flag[i][j] = true;
     }
-    private void sendToServer(){
+    private void sendToServer() throws IOException {
         StringBuilder data = new StringBuilder();
         for (int i = 0; i<3;i++){
             for (int j = 0; j<3;j++){
@@ -145,59 +246,54 @@ public class Controller implements Initializable {
             }
             data.append("\n");
         }
-        try {
-            socket.getOutputStream().write(data.toString().getBytes(StandardCharsets.UTF_8));
-            socket.getOutputStream().flush();
-            socket.shutdownOutput();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+
+        data.append("bye").append("\n");
+        socket.getOutputStream().write(data.toString().getBytes(StandardCharsets.UTF_8));
+        receiveFromServer();
     }
 
     private void receiveFromServer(){
-        Thread thread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                InputStream inputStream;
-                InputStreamReader inputStreamReader;
-                BufferedReader bufferedReader;
-                try {
-                    inputStream = socket.getInputStream();
-                    inputStreamReader = new InputStreamReader(inputStream);
-                    bufferedReader = new BufferedReader(inputStreamReader);
+        Thread thread = new Thread(() -> {
+            InputStream inputStream;
+            InputStreamReader inputStreamReader;
+            BufferedReader bufferedReader;
+            try {
+                inputStream = socket.getInputStream();
+                inputStreamReader = new InputStreamReader(inputStream);
+                bufferedReader = new BufferedReader(inputStreamReader);
 
-                    String data;
-                    int count = 0;
-                    while ((data = bufferedReader.readLine()) != null) {
-                        String[] temp = data.split(" ");
+                String data;
+                int count = 0;
+                while (!((data = bufferedReader.readLine()).contains("bye"))) {
+                    String[] temp = data.split(" ");
+                    if(count<3) {
                         for (int i = 0; i < 3; i++) {
                             chessBoard[count][i] = Integer.parseInt(temp[i]);
                         }
                     }
-                    TURN = !TURN;
-                } catch (Exception e) {
-                    e.printStackTrace();
+                    if(count == 3){
+                        serverTurn = data.equals("true");
+                    }
+                    if (count == 4){
+                        text.setText(data);
+                        if(data.contains("Wins")){
+                            Thread thread1 = new Thread(() -> {
+                                try {
+                                    Thread.sleep(100);
+                                } catch (InterruptedException e) {
+                                    throw new RuntimeException(e);
+                                }
+                                timer.stop();
+                            });
+                            thread1.start();
+                        }
+                    }
+                    count++;
                 }
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         });
         thread.start();
-    }
-
-    private void update(){
-        switch (stage) {
-            case 0:
-                receiveFromServer();
-                break;
-            case 1 :
-            {
-                sendToServer();
-                stage = 0;
-                update();
-                break;
-            }
-            default :
-                System.out.println("Invalid!!");
-                break;
-        }
     }
 }
