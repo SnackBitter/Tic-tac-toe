@@ -5,8 +5,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.Socket;
-import java.net.SocketException;
-import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import javafx.animation.AnimationTimer;
 import javafx.fxml.FXML;
@@ -17,12 +15,12 @@ import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.Line;
 import javafx.scene.shape.Rectangle;
-
 import java.net.URL;
 import java.util.ResourceBundle;
 import javafx.scene.text.Text;
 
 public class Controller implements Initializable {
+
     private static final int PLAY_1 = 1;
     private static final int PLAY_2 = 2;
     private static final int EMPTY = 0;
@@ -81,16 +79,19 @@ public class Controller implements Initializable {
 
         //服务器断开异常抛出
         Thread thread = new Thread(() -> {
-            try {
-                while (true) {
-                    Thread.sleep(1000);
-                    socket.sendUrgentData(0xFF);
-                    socket.setSoTimeout(15000);
+            int count = 0;
+            while (true) {
+                try {
+                    Thread.sleep(200);
+                    socket.getOutputStream().write("M\n".getBytes(StandardCharsets.UTF_8));
+                    count = 0;
+                }catch (Exception e){
+                    count++;
+                    if(count>5) {
+                        text.setText("Lost Server");
+                        timer.stop();
+                    }
                 }
-            }catch (SocketTimeoutException | SocketException e){
-                text.setText("Server is shutting down");
-            } catch (IOException | InterruptedException e) {
-                throw new RuntimeException(e);
             }
         });
         timer = new AnimationTimer() {
@@ -103,9 +104,9 @@ public class Controller implements Initializable {
         game_panel.setOnMouseClicked(event -> {
             int x = (int) (event.getX() / BOUND);
             int y = (int) (event.getY() / BOUND);
-            if(!(TURN==serverTurn)){
+            if (!(TURN == serverTurn)) {
                 text.setText("Now is not your turn!------Wait for another player");
-            }else {
+            } else {
                 if (refreshBoard(x, y)) {
                     try {
                         sendToServer();
@@ -129,7 +130,7 @@ public class Controller implements Initializable {
 
         startButton.setOnMouseClicked(event -> {
             try {
-                socket = new Socket("127.0.0.1",port);
+                socket = new Socket("127.0.0.1", port);
                 thread.start();
                 receiveFromServer();
             } catch (IOException e) {
@@ -137,7 +138,7 @@ public class Controller implements Initializable {
             }
             receiveFromServer();
         });
-        
+
         closeButton.setOnMouseClicked(event -> {
             try {
                 socket.close();
@@ -148,13 +149,13 @@ public class Controller implements Initializable {
         });
 
         Circle.setOnMouseClicked(event -> {
-            if(room==1) {
+            if (room == 1) {
                 port = 1345;
                 TURN = true;
-            }else if(room == 2){
+            } else if (room == 2) {
                 port = 2456;
                 TURN = true;
-            }else {
+            } else {
                 text.setText("Choose your room first");
                 return;
             }
@@ -162,13 +163,13 @@ public class Controller implements Initializable {
         });
 
         Line.setOnMouseClicked(event -> {
-            if(room==1) {
+            if (room == 1) {
                 port = 6890;
                 TURN = false;
-            }else if(room == 2){
+            } else if (room == 2) {
                 port = 5789;
                 TURN = false;
-            }else {
+            } else {
                 text.setText("Choose your room first");
                 return;
             }
@@ -176,7 +177,7 @@ public class Controller implements Initializable {
         });
     }
 
-    private boolean refreshBoard (int x, int y) {
+    private boolean refreshBoard(int x, int y) {
         if (chessBoard[x][y] == EMPTY) {
             chessBoard[x][y] = serverTurn ? PLAY_1 : PLAY_2;
             return true;
@@ -184,7 +185,7 @@ public class Controller implements Initializable {
         return false;
     }
 
-    private void drawChess () {
+    private void drawChess() {
         for (int i = 0; i < chessBoard.length; i++) {
             for (int j = 0; j < chessBoard[0].length; j++) {
                 if (flag[i][j]) {
@@ -208,7 +209,7 @@ public class Controller implements Initializable {
         }
     }
 
-    private void drawCircle (int i, int j) {
+    private void drawCircle(int i, int j) {
         Circle circle = new Circle();
         base_square.getChildren().add(circle);
         circle.setCenterX(i * BOUND + BOUND / 2.0 + OFFSET);
@@ -219,7 +220,7 @@ public class Controller implements Initializable {
         flag[i][j] = true;
     }
 
-    private void drawLine (int i, int j) {
+    private void drawLine(int i, int j) {
         Line line_a = new Line();
         Line line_b = new Line();
         base_square.getChildren().add(line_a);
@@ -237,22 +238,22 @@ public class Controller implements Initializable {
         line_b.setStroke(Color.BLUE);
         flag[i][j] = true;
     }
+
     private void sendToServer() throws IOException {
         StringBuilder data = new StringBuilder();
-        for (int i = 0; i<3;i++){
-            for (int j = 0; j<3;j++){
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
                 data.append(chessBoard[i][j]);
                 data.append(" ");
             }
             data.append("\n");
         }
-
         data.append("bye").append("\n");
         socket.getOutputStream().write(data.toString().getBytes(StandardCharsets.UTF_8));
         receiveFromServer();
     }
 
-    private void receiveFromServer(){
+    private void receiveFromServer() {
         Thread thread = new Thread(() -> {
             InputStream inputStream;
             InputStreamReader inputStreamReader;
@@ -265,18 +266,21 @@ public class Controller implements Initializable {
                 String data;
                 int count = 0;
                 while (!((data = bufferedReader.readLine()).contains("bye"))) {
+                    if(data.startsWith("M")){
+                        continue;
+                    }
                     String[] temp = data.split(" ");
-                    if(count<3) {
+                    if (count < 3) {
                         for (int i = 0; i < 3; i++) {
                             chessBoard[count][i] = Integer.parseInt(temp[i]);
                         }
                     }
-                    if(count == 3){
+                    if (count == 3) {
                         serverTurn = data.equals("true");
                     }
-                    if (count == 4){
+                    if (count == 4) {
                         text.setText(data);
-                        if(data.contains("Wins")){
+                        if (data.contains("Wins")||data.contains("Tied")) {
                             Thread thread1 = new Thread(() -> {
                                 try {
                                     Thread.sleep(100);
@@ -286,12 +290,13 @@ public class Controller implements Initializable {
                                 timer.stop();
                             });
                             thread1.start();
+                            socket.close();
                         }
                     }
                     count++;
                 }
             } catch (Exception e) {
-                e.printStackTrace();
+                System.out.println("Lost Server");
             }
         });
         thread.start();

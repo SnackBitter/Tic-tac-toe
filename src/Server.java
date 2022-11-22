@@ -4,9 +4,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 
 public class Server {
 
@@ -25,6 +23,8 @@ public class Server {
     private static boolean turn1 = true;
     private static boolean isTied = false;
 
+    private static boolean isTied1 = false;
+
     public Server() throws IOException {
         player_1 = new ServerSocket(1345);
         player_2 = new ServerSocket(6890);
@@ -34,192 +34,178 @@ public class Server {
 
     public synchronized static void main(String[] args) throws IOException {
         Server server = new Server();
-        Thread room1 = new Thread(new Runnable() {
-            @Override
-            public void run() {
+        Thread room1 = new Thread(() -> {
+            try {
                 Socket client1;
-                try {
-                    client1 = player_1.accept();
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
+                client1 = player_1.accept();
                 System.out.println("Player1 connected");
                 sendToClient(client1, "Waiting for another player");
+
                 Socket client2;
-                try {
-                    client2 = player_2.accept();
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
+                client2 = player_2.accept();
                 System.out.println("Player2 connected");
                 sendToClient(client1, "Game Start!");
                 sendToClient(client2, "Game Start!");
                 Thread thread1 = new Thread(() -> {
-                    try {
-                        while (true) {
-                            Thread.sleep(1000);
-                            client1.sendUrgentData(0xFF);
-                            client1.setSoTimeout(10000);
+                    int count = 0;
+                    while (true) {
+                        try {
+                            Thread.sleep(200);
+                            client1.getOutputStream().write("M\n".getBytes(StandardCharsets.UTF_8));
+                            count = 0;
+                        } catch (Exception e) {
+                            count++;
+                            if (count > 5) {
+                                sendToClient(client2, "Another player is disconnected");
+                            }
                         }
-                    } catch (IOException | InterruptedException e) {
-                        sendToClient(client2, "Another player is disconnected");
                     }
                 });
                 Thread thread2 = new Thread(() -> {
-                    try {
-                        while (true) {
-                            Thread.sleep(1000);
-                            client2.sendUrgentData(0xFF);
-                            client2.setSoTimeout(10000);
+                    int count = 0;
+                    while (true) {
+                        try {
+                            Thread.sleep(200);
+                            client2.getOutputStream().write("M\n".getBytes(StandardCharsets.UTF_8));
+                            count = 0;
+                        } catch (Exception e) {
+                            count++;
+                            if (count > 5) {
+                                sendToClient(client1, "Another player is disconnected");
+                            }
                         }
-                    } catch (IOException | InterruptedException e) {
-                        sendToClient(client1, "Another player is disconnected");
                     }
                 });
 
-                try {
-                    thread1.start();
-                    thread2.start();
-                    while (true) {
-                        if (turn) {
-                            receiveFromClient(client1);
-                            if (checkIfWin(chessBoard)) {
-                                sendToClient(client1, "Circle Wins!!");
-                                sendToClient(client2, "Circle Wins!!");
-                                break;
-                            }
-                            if (isTied) {
-                                sendToClient(client1, "Tied");
-                                sendToClient(client2, "Tied");
-                                break;
-                            }
-                            turn = !turn;
-                            sendToClient(client2, "");
-                        } else {
-                            receiveFromClient(client2);
-                            if (checkIfWin(chessBoard)) {
-                                sendToClient(client1, "Line Wins!!");
-                                sendToClient(client2, "Line Wins!!");
-                                break;
-                            }
-                            if (isTied) {
-                                sendToClient(client1, "Tied");
-                                sendToClient(client2, "Tied");
-                                break;
-                            }
-                            turn = !turn;
-                            sendToClient(client1, "");
+                thread1.start();
+                thread2.start();
+                while (true) {
+                    if (turn) {
+                        receiveFromClient(client1);
+                        if (checkIfWin(chessBoard, 0)) {
+                            sendToClient(client1, "Circle Wins!!");
+                            sendToClient(client2, "Circle Wins!!");
+                            break;
                         }
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }finally {
-                    thread1.interrupt();
-                    thread2.interrupt();
-                    try {
-                        client1.close();
-                        client2.close();
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
+                        if (isTied) {
+                            sendToClient(client1, "Tied");
+                            sendToClient(client2, "Tied");
+                            break;
+                        }
+                        turn = !turn;
+                        sendToClient(client2, "");
+                    } else {
+                        receiveFromClient(client2);
+                        if (checkIfWin(chessBoard, 0)) {
+                            sendToClient(client1, "Line Wins!!");
+                            sendToClient(client2, "Line Wins!!");
+                            break;
+                        }
+                        if (isTied) {
+                            sendToClient(client1, "Tied");
+                            sendToClient(client2, "Tied");
+                            break;
+                        }
+                        turn = !turn;
+                        sendToClient(client1, "");
                     }
                 }
+                thread1.interrupt();
+                thread2.interrupt();
+                client1.close();
+                client2.close();
+            } catch (IOException e) {
+                System.out.println("Connect close");
             }
         });
 
-        Thread room2 = new Thread(new Runnable() {
-            @Override
-            public void run() {
+        Thread room2 = new Thread(() -> {
+            try {
                 Socket client1;
-                try {
-                    client1 = player_3.accept();
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
+                client1 = player_3.accept();
                 System.out.println("Player3 connected");
                 sendToClient1(client1, "Waiting for another player");
-                Socket client2;
 
-                try {
-                    client2 = player_4.accept();
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
+                Socket client2;
+                client2 = player_4.accept();
                 System.out.println("Player4 connected");
                 sendToClient1(client1, "Game Start!");
                 sendToClient1(client2, "Game Start!");
                 Thread thread1 = new Thread(() -> {
-                    try {
-                        while (true) {
-                            Thread.sleep(1000);
-                            client1.sendUrgentData(0xFF);
-                            client1.setSoTimeout(10000);
+                    int count = 0;
+                    while (true) {
+                        try {
+
+                            Thread.sleep(200);
+                            client1.getOutputStream().write("M\n".getBytes(StandardCharsets.UTF_8));
+                            count = 0;
+
+                        } catch (Exception e) {
+                            count++;
+                            if (count > 5) {
+                                sendToClient1(client2, "Another player is disconnected");
+                            }
                         }
-                    } catch (SocketTimeoutException e) {
-                        sendToClient1(client2, "Another player is disconnected");
-                    } catch (IOException | InterruptedException e) {
-                        throw new RuntimeException(e);
                     }
                 });
                 Thread thread2 = new Thread(() -> {
-                    try {
-                        while (true) {
-                            Thread.sleep(1000);
-                            client2.sendUrgentData(0xFF);
-                            client2.setSoTimeout(10000);
+                    int count = 0;
+                    while (true) {
+                        try {
+
+                            Thread.sleep(200);
+                            client2.getOutputStream().write("M\n".getBytes(StandardCharsets.UTF_8));
+                            count = 0;
+
+                        } catch (Exception e) {
+                            count++;
+                            if (count > 5) {
+                                sendToClient1(client1, "Another player is disconnected");
+                            }
                         }
-                    } catch (SocketTimeoutException e) {
-                        sendToClient1(client1, "Another player is disconnected");
-                    } catch (IOException | InterruptedException e) {
-                        throw new RuntimeException(e);
                     }
                 });
+                thread1.start();
+                thread2.start();
+                while (true) {
 
-                try {
-                    thread1.start();
-                    thread2.start();
-                    while (true) {
-                        if (turn1) {
-                            receiveFromClient1(client1);
-                            if (checkIfWin(chessBoard1)) {
-                                sendToClient1(client1, "Circle Wins!!");
-                                sendToClient1(client2, "Circle Wins!!");
-                                break;
-                            }
-                            if (isTied) {
-                                sendToClient1(client1, "Tied");
-                                sendToClient1(client2, "Tied");
-                                break;
-                            }
-                            turn1 = !turn1;
-                            sendToClient1(client2, "");
-                        } else {
-                            receiveFromClient1(client2);
-                            if (checkIfWin(chessBoard1)) {
-                                sendToClient1(client1, "Line Wins!!");
-                                sendToClient1(client2, "Line Wins!!");
-                                break;
-                            }
-                            if (isTied) {
-                                sendToClient1(client1, "Tied");
-                                sendToClient1(client2, "Tied");
-                                break;
-                            }
-                            turn1 = !turn1;
-                            sendToClient1(client1, "");
+                    if (turn1) {
+                        receiveFromClient1(client1);
+                        if (checkIfWin(chessBoard1, 1)) {
+                            sendToClient1(client1, "Circle Wins!!");
+                            sendToClient1(client2, "Circle Wins!!");
+                            break;
                         }
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }finally {
-                    thread1.interrupt();
-                    thread2.interrupt();
-                    try {
-                        client1.close();
-                        client2.close();
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
+                        if (isTied1) {
+                            sendToClient1(client1, "Tied");
+                            sendToClient1(client2, "Tied");
+                            break;
+                        }
+                        turn1 = !turn1;
+                        sendToClient1(client2, "");
+                    } else {
+                        receiveFromClient1(client2);
+                        if (checkIfWin(chessBoard1, 1)) {
+                            sendToClient1(client1, "Line Wins!!");
+                            sendToClient1(client2, "Line Wins!!");
+                            break;
+                        }
+                        if (isTied1) {
+                            sendToClient1(client1, "Tied");
+                            sendToClient1(client2, "Tied");
+                            break;
+                        }
+                        turn1 = !turn1;
+                        sendToClient1(client1, "");
                     }
                 }
+                thread1.interrupt();
+                thread2.interrupt();
+                client1.close();
+                client2.close();
+
+            } catch (IOException e) {
+                System.out.println("Connect close");
             }
         });
 
@@ -240,7 +226,7 @@ public class Server {
         try {
             client.getOutputStream().write(data.toString().getBytes(StandardCharsets.UTF_8));
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            System.out.println("Connect close");
         }
     }
 
@@ -273,6 +259,9 @@ public class Server {
             String data;
             int count = 0;
             while (!((data = bufferedReader.readLine()).contains("bye"))) {
+                if (data.equals("M")) {
+                    continue;
+                }
                 String[] temp = data.split(" ");
                 if (count < 3) {
                     for (int i = 0; i < 3; i++) {
@@ -282,9 +271,10 @@ public class Server {
                 count++;
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            System.out.println("Connect close");
         }
     }
+
     private static void receiveFromClient1(Socket client) {
         InputStream inputStream;
         InputStreamReader inputStreamReader;
@@ -297,6 +287,9 @@ public class Server {
             String data;
             int count = 0;
             while (!((data = bufferedReader.readLine()).contains("bye"))) {
+                if (data.equals("M")) {
+                    continue;
+                }
                 String[] temp = data.split(" ");
                 if (count < 3) {
                     for (int i = 0; i < 3; i++) {
@@ -310,7 +303,7 @@ public class Server {
         }
     }
 
-    static boolean checkIfWin(int[][] chessBoard) {
+    static boolean checkIfWin(int[][] chessBoard, int k) {
         //判断列
         for (int i = 0; i < 3; i++) {
             if (chessBoard[i][0] == chessBoard[i][1] && chessBoard[i][1] == chessBoard[i][2]
@@ -342,7 +335,11 @@ public class Server {
                 }
             }
         }
-        isTied = true;
+        if (k == 1) {
+            isTied1 = true;
+        } else {
+            isTied = true;
+        }
         return false;
     }
 }
