@@ -1,4 +1,4 @@
-package application_2;
+package application_4;
 
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
@@ -6,7 +6,7 @@ import javafx.scene.Scene;
 import javafx.scene.layout.Pane;
 import javafx.stage.Stage;
 
-public class Main2 extends Application {
+public class Main4 extends Application {
 
   @Override
   public void start(Stage primaryStage) {
@@ -15,7 +15,7 @@ public class Main2 extends Application {
 
       fxmlLoader.setLocation(getClass().getClassLoader().getResource("mainUI_1.fxml"));
       Pane root = fxmlLoader.load();
-      primaryStage.setTitle("Tic Tac Toe--player2");
+      primaryStage.setTitle("Tic Tac Toe--player4");
       primaryStage.setScene(new Scene(root));
       primaryStage.setResizable(false);
       primaryStage.show();
